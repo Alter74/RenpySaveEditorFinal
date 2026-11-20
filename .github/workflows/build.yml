@@ -1,0 +1,54 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Buscar y descomprimir proyecto
+        run: |
+          echo "Archivos en la raíz del repositorio:"
+          ls -la
+          # Usa cualquier .zip de la raíz (el más reciente), sin importar cómo se llame
+          ZIP=$(ls -t ./*.zip 2>/dev/null | head -n 1 || true)
+          if [ -n "$ZIP" ]; then
+            echo "Descomprimiendo: $ZIP"
+            unzip -q -o "$ZIP"
+          else
+            echo "No hay .zip en la raíz; busco el proyecto ya descomprimido."
+          fi
+          # Localiza el proyecto Gradle (la carpeta que tiene gradlew)
+          GRADLEW=$(find . -name gradlew -not -path "./.git/*" | awk '{print length, $0}' | sort -n | head -n 1 | cut -d' ' -f2-)
+          if [ -z "$GRADLEW" ]; then
+            echo "::error::No encontré el proyecto. Sube RenpySaveEditor.zip a la raíz del repositorio."
+            exit 1
+          fi
+          PROJ=$(dirname "$GRADLEW")
+          echo "Proyecto en: $PROJ"
+          echo "PROJ=$PROJ" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Compilar
+        working-directory: ${{ env.PROJ }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: apks
+          path: ${{ env.PROJ }}/app/build/outputs/apk/**/*.apk
